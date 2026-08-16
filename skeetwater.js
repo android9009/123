@@ -66,7 +66,7 @@ function HSVtoRGB(h, s, v)
     // skeetwater by kymiko
     Render.FilledRect(x + 1570, y + 5, 335, 20, [15, 15, 15, 255]);
     Render.FilledRect(x + 1570, y + 5, 335, 2, [224, 61, 61, 255]);
-    Render.StringCustom(x + 1574, y + 9, 0, "skeet.cc [metamod] | starboy | delay: " + ping + "ms | " + tickrate + "tick | " + hours + minutes + seconds, [255, 255, 255, 255], fontpixel);
+    Render.StringCustom(x + 1574, y + 9, 0, "ez41tap | Stay at home | Glhf | delay: " + ping + "ms | " + tickrate + "tick | " + hours + minutes + seconds, [255, 255, 255, 255], fontpixel);
 
 
 }

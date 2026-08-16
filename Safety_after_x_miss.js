@@ -67,7 +67,7 @@ function on_create_move() {
         misses[target_idx]++;
 
         //Force safety on the current target if more than x misses
-        if (misses[target_idx] >= UI.GetValue("Misc", "JAVASCRIPT", "Script Items", "Safety after x misses")) {
+        if (misses[target_idx] >= UI.GetValue("Misc", "JAVASCRIPT", "Script items", "Safety after x misses")) {
             safety_ents[target_idx] = 1;
         }
 

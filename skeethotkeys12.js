@@ -23,13 +23,13 @@ function keybinds()
      const fontpixel = Render.AddFont( "Verdana", 7, 100);
 
      if (UI.IsHotkeyActive("Anti-Aim", "Extra", "Slow walk")) {
-       h.push("Slow motion")
+       h.push("Slow Walk")
      }
      if (UI.IsHotkeyActive("Anti-Aim", "Extra", "Fake duck")) {
-       h.push("Duck peek assist")
+       h.push("Fake Duck")
      }
      if (UI.IsHotkeyActive("Misc", "General", "Movement", "Auto peek")) {
-       h.push("Quick peek")
+       h.push("Auto Peek")
      }
      if (UI.IsHotkeyActive("Anti-Aim", "Fake angles", "Inverter")) {
        h.push("Anti-Aim invert")
