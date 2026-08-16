@@ -1,0 +1,889 @@
+// Cleaned JS — crash-safe hotfix build. Use only on your own code.
+
+// ========== Utils / Safe ==========
+function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
+function InGameAlive(){
+  if (!World.GetServerString()) return false;
+  var me = Entity.GetLocalPlayer();
+  return me && Entity.IsAlive(me);
+}
+function ensureMinDiff(real, fake, minDiff){
+  var diff = Math.abs(fake - real);
+  if (diff >= minDiff) return [real, fake];
+  var need = minDiff - diff;
+  if (fake > real) fake = clamp(fake + need, -60, 60);
+  else fake = clamp(fake - need, -60, 60);
+  return [real, fake];
+}
+
+// Fonts
+var g_font = 0;
+function on_load(){ try{ g_font = Render.AddFont("Verdana", 7, 100); }catch(e){ g_font = 0; } }
+
+// Safe Register
+function Register(ev, fn) {
+  try { Cheat.RegisterCallback(ev, fn); return; }
+  catch (e1) {
+    try { var n=(typeof fn==="string")?fn:(fn&&fn.name?fn.name:""); if(n) Cheat.RegisterCallback(ev, n); return; }
+    catch(e2){ try{ if (typeof Global!=="undefined" && Global.RegisterCallback){ var n2=(typeof fn==="string")?fn:(fn&&fn.name?fn.name:""); if(n2) Global.RegisterCallback(ev, n2); else Global.RegisterCallback(ev, fn); return; } }catch(e3){ Cheat.Print("[CB] FAILED: "+ev+"\n"); } }
+  }
+}
+
+// ========== Menu helpers ==========
+var menu_elements_t = {}, menu_c = {}, menu_spacer = "                                                                                  ";
+menu_c.call = function(fn, group, label, props){
+  if (label in menu_elements_t) throw new Error("[Menu] The label must be unique!");
+  var key = group + menu_spacer + label, args = [key];
+  var meta = { name: group, label: label, properties: props };
+  if (props !== null) for (var i=0;i<props.length;i++) args.push(props[i]);
+  fn.apply(null, args); menu_elements_t[label] = meta; return label;
+};
+menu_c.get = function(label){
+  if (!(label in menu_elements_t)) throw new Error("[Menu] This element's label doesn't exist!");
+  var h = menu_elements_t[label], key = h.name + menu_spacer + h.label;
+  return UI.GetValue("Misc","JAVASCRIPT","Script items", key);
+};
+menu_c.get_hotkey = function(label){
+  if (!(label in menu_elements_t)) throw new Error("[Menu] This element's label doesn't exist!");
+  var h = menu_elements_t[label], key = h.name + menu_spacer + h.label;
+  return UI.IsHotkeyActive("Misc","JAVASCRIPT","Script items", key);
+};
+
+// ========== Globals ==========
+var alpha=0, size=0, nn99="|REZOLVER|";
+
+// AA sliders A1/A3 + новые A2/A4
+UI.AddSliderFloat("ANTI", -180, 180);
+UI.AddSliderFloat("Delta1", -180, 180);
+UI.AddSliderFloat("Desync1", -180, 180);
+UI.AddSliderFloat("Pitch1", 0, 7);
+
+UI.AddSliderFloat("ANTI9", -180, 180);
+UI.AddSliderFloat("Delta2", -180, 180);
+UI.AddSliderFloat("Desync2", -180, 180);
+UI.AddSliderFloat("Pitch2", 0, 7);
+
+// Новые слайдеры для A2 и A4
+UI.AddSliderFloat("Delta3", -180, 180);
+UI.AddSliderFloat("Desync3", -180, 180);
+UI.AddSliderFloat("Delta4", -180, 180);
+UI.AddSliderFloat("Desync4", -180, 180);
+
+// Линки 1–4
+UI.AddCheckbox("Link Delta1&Desync1");
+UI.AddSliderFloat("Delta-Desync1", -180, 180);
+UI.AddCheckbox("Link Delta2&Desync2");
+UI.AddSliderFloat("Delta-Desync2", -180, 180);
+UI.AddCheckbox("Link Delta3&Desync3");
+UI.AddSliderFloat("Delta-Desync3", -180, 180);
+UI.AddCheckbox("Link Delta4&Desync4");
+UI.AddSliderFloat("Delta-Desync4", -180, 180);
+
+// ========== Menu ==========
+function addtomenu(){
+  UI.AddLabel("                  REZOLVER           ");
+  UI.AddLabel("                   Antiaim            ");
+  UI.AddSliderInt("Antiaim_x", 0, Global.GetScreenSize()[0]);
+  UI.AddSliderInt("Antiaim_y", 0, Global.GetScreenSize()[1]);
+  UI.AddDropdown("Lagsync", ["0", "1"]);
+  UI.AddDropdown("Type", ["Off", "GOD mode", "Low tap", "spin", "Low_delta", "Wide_delta", "Desync wave", "LBY pulse", "Безопасный пик"]);
+  UI.AddLabel("--------------------------");
+  UI.AddSliderInt("                  ", 0, 0);
+  UI.AddSliderFloat("Effect duration", 0, 2);
+  UI.AddSliderFloat("SWITCH delay", 0.05, 1.50);
+  UI.AddSliderInt("AA min diff", 0, 60);
+  UI.AddDropdown("Breaker", ["Off", "Lag V1", "Lag V2"]);
+
+  // Desync wave
+  UI.AddSliderInt("DW min", 0, 60);
+  UI.AddSliderInt("DW max", 0, 60);
+  UI.AddSliderInt("DW steps", 2, 12);
+  UI.AddSliderInt("DW speed", 1, 20);
+
+  // LBY Pulse (Wide base)
+  UI.AddLabel("LBY Pulse (Wide base)");
+  UI.AddSliderInt("LBY pulse A", 0, 120);
+  UI.AddSliderInt("LBY pulse B", 0, 120);
+  UI.AddSliderFloat("LBY pulse hold", 0.05, 1.50);
+
+  // Безопасный пик (Safe peek)
+  UI.AddLabel("Безопасный пик");
+  UI.AddSliderInt("SP idle real", 0, 60);
+  UI.AddSliderInt("SP idle fake", 0, 60);
+  UI.AddSliderInt("SP idle LBY", 0, 120);
+
+  UI.AddSliderInt("SP peek real", 0, 60);
+  UI.AddSliderInt("SP peek fake", 0, 60);
+  UI.AddSliderInt("SP peek LBY", 0, 120);
+
+  UI.AddSliderFloat("SP accel threshold", 5, 120);
+  UI.AddSliderFloat("SP hold", 0.05, 0.50);
+
+  UI.AddCheckbox("SP only on shot");
+  UI.AddCheckbox("SP FL boost");
+  UI.AddSliderInt("SP FL limit", 2, 16);
+
+  UI.AddSliderInt("SP LBY jitter", 0, 8);
+
+  // Dynamic scale
+  UI.AddCheckbox("SP dynamic scale");
+  UI.AddSliderInt("SP ground scale %", 50, 150);
+  UI.AddSliderInt("SP air scale %", 50, 150);
+  UI.AddSliderInt("SP slow scale %", 50, 150);
+  UI.AddSliderInt("SP slow speed threshold", 0, 100);
+
+  // ResolverX + HUD
+  UI.AddCheckbox("ResolverX enabled");
+  UI.AddCheckbox("Resolver HUD");
+  UI.AddSliderInt("RZ HUD X", 0, Global.GetScreenSize()[0]);
+  UI.AddSliderInt("RZ HUD Y", 0, Global.GetScreenSize()[1]);
+}
+
+// Runtime (инициализируем безопасно)
+var aa=1, aad=1, lasttime=0, realtime=0;
+
+// ========== Trash talk ==========
+var normal_killsays = ['Создатель JS "REЗOLVER"'];
+var hs_killsays = ['Подпишися |https:/www.youtube.com/watch?v=ERlB-HlY8Dk&t=49s|'];
+function on_death(){
+  var pool = (Event.GetInt("headshot")===1 && Math.random()>0.5) ? hs_killsays : normal_killsays;
+  var msg = pool[Math.floor(Math.random()*pool.length)];
+  Cheat.ExecuteCommand("say " + msg);
+  Local.SetClanTag("REZOLVER");
+}
+UI.AddSliderInt("                  ", 0, 0);
+
+// ========== A1–A4 ==========
+function A1(){
+  if (!InGameAlive()) return;
+  Local.SetClanTag(nn99);
+  var inv = UI.IsHotkeyActive("Anti-Aim","Fake angles","Inverter");
+  var sign = inv ? -1 : 1;
+  var anti = UI.GetValue("Misc","JAVASCRIPT","Script items","ANTI");
+  var link = UI.GetValue("Misc","JAVASCRIPT","Script items","Link Delta1&Desync1");
+  var d = link ? UI.GetValue("Misc","JAVASCRIPT","Script items","Delta-Desync1") : UI.GetValue("Misc","JAVASCRIPT","Script items","Delta1");
+  var s = link ? UI.GetValue("Misc","JAVASCRIPT","Script items","Delta-Desync1") : UI.GetValue("Misc","JAVASCRIPT","Script items","Desync1");
+  var p = UI.GetValue("Misc","JAVASCRIPT","Script items","Pitch1");
+  var md = UI.GetValue("Misc","JAVASCRIPT","Script items","AA min diff")|0;
+
+  var real = sign * d, fake = sign * anti, rf = ensureMinDiff(real, fake, md);
+  AntiAim.SetOverride(1);
+  AntiAim.SetRealOffset(rf[0]); AntiAim.SetFakeOffset(rf[1]); AntiAim.SetLBYOffset(sign*s);
+  UI.SetValue("Anti-Aim","Extra","Pitch", p);
+}
+function A2(){
+  if (!InGameAlive()) return;
+  var inv = UI.IsHotkeyActive("Anti-Aim","Fake angles","Inverter"), sign = inv ? -1 : 1;
+  var anti = UI.GetValue("Misc","JAVASCRIPT","Script items","ANTI");
+  var link3 = UI.GetValue("Misc","JAVASCRIPT","Script items","Link Delta3&Desync3");
+  var d = link3 ? UI.GetValue("Misc","JAVASCRIPT","Script items","Delta-Desync3") : UI.GetValue("Misc","JAVASCRIPT","Script items","Delta3");
+  var s = link3 ? UI.GetValue("Misc","JAVASCRIPT","Script items","Delta-Desync3") : UI.GetValue("Misc","JAVASCRIPT","Script items","Desync3");
+  var p = UI.GetValue("Misc","JAVASCRIPT","Script items","Pitch1");
+  var md = UI.GetValue("Misc","JAVASCRIPT","Script items","AA min diff")|0;
+
+  var real = sign * d, fake = sign * anti, rf = ensureMinDiff(real, fake, md);
+  AntiAim.SetOverride(1);
+  AntiAim.SetRealOffset(rf[0]); AntiAim.SetFakeOffset(rf[1]); AntiAim.SetLBYOffset(sign*s);
+  UI.SetValue("Anti-Aim","Extra","Pitch", p);
+}
+function A3(){
+  if (!InGameAlive()) return;
+  var inv = UI.IsHotkeyActive("Anti-Aim","Fake angles","Inverter"), sign = inv ? -1 : 1;
+  var anti2 = UI.GetValue("Misc","JAVASCRIPT","Script items","ANTI9");
+  var link2 = UI.GetValue("Misc","JAVASCRIPT","Script items","Link Delta2&Desync2");
+  var d = link2 ? UI.GetValue("Misc","JAVASCRIPT","Script items","Delta-Desync2") : UI.GetValue("Misc","JAVASCRIPT","Script items","Delta2");
+  var s = link2 ? UI.GetValue("Misc","JAVASCRIPT","Script items","Delta-Desync2") : UI.GetValue("Misc","JAVASCRIPT","Script items","Desync2");
+  var p = UI.GetValue("Misc","JAVASCRIPT","Script items","Pitch2");
+  var md = UI.GetValue("Misc","JAVASCRIPT","Script items","AA min diff")|0;
+
+  var real = sign * d, fake = sign * anti2, rf = ensureMinDiff(real, fake, md);
+  AntiAim.SetOverride(1);
+  AntiAim.SetRealOffset(rf[0]); AntiAim.SetFakeOffset(rf[1]); AntiAim.SetLBYOffset(sign*s);
+  UI.SetValue("Anti-Aim","Extra","Pitch", p);
+}
+function A4(){
+  if (!InGameAlive()) return;
+  var inv = UI.IsHotkeyActive("Anti-Aim","Fake angles","Inverter"), sign = inv ? -1 : 1;
+  var anti2 = UI.GetValue("Misc","JAVASCRIPT","Script items","ANTI9");
+  var link4 = UI.GetValue("Misc","JAVASCRIPT","Script items","Link Delta4&Desync4");
+  var d = link4 ? UI.GetValue("Misc","JAVASCRIPT","Script items","Delta-Desync4") : UI.GetValue("Misc","JAVASCRIPT","Script items","Delta4");
+  var s = link4 ? UI.GetValue("Misc","JAVASCRIPT","Script items","Delta-Desync4") : UI.GetValue("Misc","JAVASCRIPT","Script items","Desync4");
+  var p = UI.GetValue("Misc","JAVASCRIPT","Script items","Pitch2");
+  var md = UI.GetValue("Misc","JAVASCRIPT","Script items","AA min diff")|0;
+
+  var real = sign * d, fake = sign * anti2, rf = ensureMinDiff(real, fake, md);
+  AntiAim.SetOverride(1);
+  AntiAim.SetRealOffset(rf[0]); AntiAim.SetFakeOffset(rf[1]); AntiAim.SetLBYOffset(sign*s);
+  UI.SetValue("Anti-Aim","Extra","Pitch", p);
+}
+
+// Breakers
+function BR1(){ UI.SetValue("Anti-Aim","Extra","Pitch",3); }
+function BR2(){ UI.SetValue("Anti-Aim","Extra","Pitch",3); }
+function BR3(){ UI.SetValue("Anti-Aim","Extra","Pitch",1); }
+function BRR1(){ var t=1+Math.floor(Math.random()*34); UI.SetValue("Anti-Aim","Fake-Lag","Trigger limit", t); }
+function BRR2(){ UI.SetValue("Anti-Aim","Fake-Lag","Trigger limit",5); }
+function BRR3(){ var t=2+Math.floor(Math.random()*7); UI.SetValue("Anti-Aim","Fake-Lag","Limit", t); }
+
+// ========== Desync wave ==========
+var dw_last_step=0, dw_hold_ticks=0;
+function lagsync_desyncwave(){
+  if (!InGameAlive()) return;
+  var inv = UI.IsHotkeyActive("Anti-Aim","Fake angles","Inverter");
+  var DW_MIN = UI.GetValue("Misc","JAVASCRIPT","Script items","DW min");
+  var DW_MAX = UI.GetValue("Misc","JAVASCRIPT","Script items","DW max");
+  var DW_STEPS = UI.GetValue("Misc","JAVASCRIPT","Script items","DW steps");
+  var DW_SPEED = UI.GetValue("Misc","JAVASCRIPT","Script items","DW speed");
+
+  if (DW_MIN<15) DW_MIN=15;
+  DW_MIN = clamp(DW_MIN,0,60);
+  DW_MAX = clamp(DW_MAX, DW_MIN+6,60);
+  DW_STEPS = clamp(DW_STEPS,2,12);
+  DW_SPEED = clamp(DW_SPEED,1,20);
+
+  var t = Global.Realtime()*DW_SPEED;
+  var s = Math.sin(t)*0.5+0.5;
+  var amp = DW_MIN + s*(DW_MAX-DW_MIN);
+  var step_size = Math.max(1, Math.round((DW_MAX-DW_MIN)/Math.max(2,DW_STEPS)));
+  amp = Math.floor(amp/step_size)*step_size;
+
+  if (dw_hold_ticks>0){ amp=dw_last_step; dw_hold_ticks--; }
+  else { if (Math.random()<0.20) dw_hold_ticks=1; dw_last_step=amp; }
+
+  var me=Entity.GetLocalPlayer(), flags=Entity.GetProp(me,"CBasePlayer","m_fFlags");
+  var on_ground = (flags&1);
+  var slow = UI.IsHotkeyActive("Anti-Aim","Extra","Slow walk");
+  var vel = Entity.GetProp(me,"CBasePlayer","m_vecVelocity[0]") || [0,0,0];
+  var speed2d = Math.sqrt((vel[0]||0)*(vel[0]||0)+(vel[1]||0)*(vel[1]||0));
+
+  var scale=1.0; if (!on_ground) scale=1.15; else if (slow || speed2d<20) scale=0.90;
+  var ampScaled = clamp(Math.round(amp*scale), DW_MIN, 60);
+
+  var sign = inv ? -1 : 1;
+  var real = sign * Math.floor(ampScaled*0.25);
+  var fake = -sign * Math.floor(clamp(Math.round(ampScaled*1.10)+8,0,60));
+  var lby  = sign * 20;
+
+  var MIN_DIFF = UI.GetValue("Misc","JAVASCRIPT","Script items","AA min diff")|0;
+  var rf = ensureMinDiff(real,fake,MIN_DIFF);
+
+  AntiAim.SetOverride(1);
+  AntiAim.SetRealOffset(rf[0]); AntiAim.SetFakeOffset(rf[1]); AntiAim.SetLBYOffset(lby);
+}
+function lagsyncdisable(){}
+
+// ========== LBY Pulse (Wide) ==========
+var lby_pulse_next = 0.0, lby_pulse_state = false;
+function lagsync_lbypulse(){
+  if (!InGameAlive()) return;
+  var inv  = UI.IsHotkeyActive("Anti-Aim","Fake angles","Inverter");
+  var sign = inv ? 1 : -1;
+  var lbyA = UI.GetValue("Misc","JAVASCRIPT","Script items","LBY pulse A");
+  var lbyB = UI.GetValue("Misc","JAVASCRIPT","Script items","LBY pulse B");
+  var hold = UI.GetValue("Misc","JAVASCRIPT","Script items","LBY pulse hold");
+  var now = Global.Realtime();
+
+  if (now >= lby_pulse_next){ lby_pulse_state = !lby_pulse_state; lby_pulse_next = now + Math.max(0.03, hold); }
+
+  var fake = -4, real = sign * 40;
+  var lby  = -sign * clamp(lby_pulse_state ? lbyB : lbyA, 0, 120);
+
+  AntiAim.SetOverride(1);
+  AntiAim.SetFakeOffset(fake); AntiAim.SetRealOffset(real); AntiAim.SetLBYOffset(lby);
+}
+
+// ========== Safe peek ==========
+var sp_prev_speed=0.0, sp_until=0.0, sp_fl_saved=-1, sp_fl_prev=-1;
+function SP_UpdateFL(){
+  if (!World.GetServerString()){
+    if (sp_fl_saved!==-1 && sp_fl_prev!==sp_fl_saved){ UI.SetValue("Anti-Aim","Fake-Lag","Limit", sp_fl_saved); sp_fl_prev=sp_fl_saved; }
+    sp_fl_saved=-1; return;
+  }
+  var me=Entity.GetLocalPlayer();
+  if (!me || !Entity.IsAlive(me)){
+    if (sp_fl_saved!==-1 && sp_fl_prev!==sp_fl_saved){ UI.SetValue("Anti-Aim","Fake-Lag","Limit", sp_fl_saved); sp_fl_prev=sp_fl_saved; }
+    sp_fl_saved=-1;
+  }
+}
+function SP_OnWeaponFire(){
+  var me=Entity.GetLocalPlayer(); if (!me) return;
+  var uid=Entity.GetEntityFromUserID(Event.GetInt("userid")); if (uid!==me) return;
+  var hold=UI.GetValue("Misc","JAVASCRIPT","Script items","SP hold");
+  sp_until = Global.Realtime() + clamp(hold,0.05,0.50);
+}
+function lagsync_safepick(){
+  if (!InGameAlive()) return;
+
+  var inv = UI.IsHotkeyActive("Anti-Aim","Fake angles","Inverter");
+  var sign = inv ? -1 : 1;
+
+  var me=Entity.GetLocalPlayer();
+  var vel=Entity.GetProp(me,"CBasePlayer","m_vecVelocity[0]") || [0,0,0];
+  var sp=Math.sqrt((vel[0]||0)*(vel[0]||0)+(vel[1]||0)*(vel[1]||0));
+  var accel=sp - sp_prev_speed; sp_prev_speed = sp;
+
+  var now=Global.Realtime();
+  var thr = UI.GetValue("Misc","JAVASCRIPT","Script items","SP accel threshold");
+  var hold= UI.GetValue("Misc","JAVASCRIPT","Script items","SP hold");
+  var onlyShot = UI.GetValue("Misc","JAVASCRIPT","Script items","SP only on shot");
+  var autoPeek=false; try{ autoPeek=UI.IsHotkeyActive("Misc","Movement","Auto peek"); }catch(e){}
+
+  if (!onlyShot && (accel>=thr || autoPeek)) sp_until = now + clamp(hold,0.05,0.50);
+  var inSpike = (now < sp_until);
+
+  var iR = UI.GetValue("Misc","JAVASCRIPT","Script items","SP idle real")|0;
+  var iF = UI.GetValue("Misc","JAVASCRIPT","Script items","SP idle fake")|0;
+  var iL = UI.GetValue("Misc","JAVASCRIPT","Script items","SP idle LBY")|0;
+  var pR = UI.GetValue("Misc","JAVASCRIPT","Script items","SP peek real")|0;
+  var pF = UI.GetValue("Misc","JAVASCRIPT","Script items","SP peek fake")|0;
+  var pL = UI.GetValue("Misc","JAVASCRIPT","Script items","SP peek LBY")|0;
+
+  // dynamic scale
+  var sc=1.0;
+  if (UI.GetValue("Misc","JAVASCRIPT","Script items","SP dynamic scale")){
+    var flags=Entity.GetProp(me,"CBasePlayer","m_fFlags");
+    var on_ground=(flags&1);
+    var slowKey = UI.IsHotkeyActive("Anti-Aim","Extra","Slow walk");
+    var slowTh = UI.GetValue("Misc","JAVASCRIPT","Script items","SP slow speed threshold")|0;
+
+    var gScale = UI.GetValue("Misc","JAVASCRIPT","Script items","SP ground scale %")/100.0;
+    var aScale = UI.GetValue("Misc","JAVASCRIPT","Script items","SP air scale %")/100.0;
+    var sScale = UI.GetValue("Misc","JAVASCRIPT","Script items","SP slow scale %")/100.0;
+
+    if (!on_ground) sc *= aScale;
+    else if (slowKey || sp <= slowTh) sc *= sScale;
+    else sc *= gScale;
+  }
+  iR = clamp(Math.round(iR*sc), 0, 60); iF = clamp(Math.round(iF*sc), 0, 60);
+  pR = clamp(Math.round(pR*sc), 0, 60); pF = clamp(Math.round(pF*sc), 0, 60);
+
+  var jA = UI.GetValue("Misc","JAVASCRIPT","Script items","SP LBY jitter")|0;
+  var jSign = ((Math.floor(now*10) % 2) ? 1 : -1);
+
+  var real = sign * (inSpike ? pR : iR);
+  var fake = sign * (inSpike ? pF : iF);
+  var lby  = -sign * ((inSpike ? pL : iL) + jSign*jA);
+
+  if (UI.GetValue("Misc","JAVASCRIPT","Script items","SP FL boost") && inSpike){
+    if (sp_fl_saved===-1) sp_fl_saved = UI.GetValue("Anti-Aim","Fake-Lag","Limit");
+    var target = UI.GetValue("Misc","JAVASCRIPT","Script items","SP FL limit")|0;
+    if (sp_fl_prev!==target){ UI.SetValue("Anti-Aim","Fake-Lag","Limit", target); sp_fl_prev=target; }
+  } else {
+    if (sp_fl_saved!==-1 && sp_fl_prev!==sp_fl_saved){ UI.SetValue("Anti-Aim","Fake-Lag","Limit", sp_fl_saved); sp_fl_prev=sp_fl_saved; }
+    sp_fl_saved=-1;
+  }
+
+  var md=UI.GetValue("Misc","JAVASCRIPT","Script items","AA min diff")|0;
+  var rf=ensureMinDiff(real,fake,md);
+
+  AntiAim.SetOverride(1);
+  AntiAim.SetRealOffset(rf[0]); AntiAim.SetFakeOffset(rf[1]); AntiAim.SetLBYOffset(clamp(lby,-120,120));
+  UI.SetValue("Anti-Aim","Extra","Pitch", 3);
+}
+
+// ========== Lagsync mains ==========
+function lagsyncv1(){
+  var status=UI.GetValue("Misc","JAVASCRIPT","Script items","Lagsync");
+  var de=UI.GetValue("Misc","JAVASCRIPT","Script items","SWITCH delay");
+  realtime=Global.Realtime(); if (lasttime===0) lasttime=realtime;
+  if (realtime-lasttime>=de){
+    if (status===1){ aad=aa+1; if (aad>2) aad=1; aa=aad; }
+    if (aa===1) S1(); if (aa===2) S2(); lasttime=realtime;
+  }
+  if (realtime<lasttime){ lasttime=Global.Realtime(); }
+}
+function lagsyncv2(){
+  var status=UI.GetValue("Misc","JAVASCRIPT","Script items","Lagsync");
+  var de=UI.GetValue("Misc","JAVASCRIPT","Script items","SWITCH delay");
+  realtime=Global.Realtime(); if (lasttime===0) lasttime=realtime;
+  if (realtime-lasttime>=de){
+    if (status===1){ aad=aa+1; if (aad>3) aad=1; aa=aad; }
+    if (aa===1) V1(); if (aa===2) V2(); if (aa===3) V3(); lasttime=realtime;
+  }
+  if (realtime<lasttime){ lasttime=Global.Realtime(); }
+}
+function lagsyncv3(){
+  var status=UI.GetValue("Misc","JAVASCRIPT","Script items","Lagsync");
+  var de=UI.GetValue("Misc","JAVASCRIPT","Script items","SWITCH delay");
+  realtime=Global.Realtime(); if (lasttime===0) lasttime=realtime;
+  var maxStates=4;
+  if (realtime-lasttime>=de){
+    if (status===1){ aad=1+Math.floor(Math.random()*maxStates); aa=aad; }
+    if (status===2){ aad=aa+1; if (aad>maxStates) aad=1; aa=aad; }
+    if (aa===1) A1(); if (aa===2) A2(); if (aa===3) A3(); if (aa===4) A4(); lasttime=realtime;
+  }
+  if (realtime<lasttime){ lasttime=Global.Realtime(); }
+}
+function lagsyncv4(){ if (!InGameAlive()) return; Local.SetClanTag(nn99); var inv=UI.IsHotkeyActive("Anti-Aim","Fake angles","Inverter"); AntiAim.SetOverride(1); if (inv){ AntiAim.SetFakeOffset(-4); AntiAim.SetRealOffset(12); AntiAim.SetLBYOffset(-16); } else { AntiAim.SetFakeOffset(-4); AntiAim.SetRealOffset(-12); AntiAim.SetLBYOffset(16); } }
+function lagsyncv5(){ if (!InGameAlive()) return; Local.SetClanTag(nn99); var inv=UI.IsHotkeyActive("Anti-Aim","Fake angles","Inverter"); AntiAim.SetOverride(1); if (inv){ AntiAim.SetFakeOffset(-4); AntiAim.SetRealOffset(40); AntiAim.SetLBYOffset(-70); } else { AntiAim.SetFakeOffset(-4); AntiAim.SetRealOffset(-40); AntiAim.SetLBYOffset(70); } }
+function breakerv1(){ var status=UI.GetValue("Misc","JAVASCRIPT","Script items","Lagsync"); var de=UI.GetValue("Misc","JAVASCRIPT","Script items","SWITCH delay"); realtime=Global.Realtime(); if (lasttime===0) lasttime=realtime; if (realtime-lasttime>=de){ if (status===1){ aad=aa+1; if (aad>3) aad=1; aa=aad; } if (aa===1) BR1(); if (aa===2) BR2(); if (aa===3) BR3(); lasttime=realtime; } }
+function breakerv2(){ var status=UI.GetValue("Misc","JAVASCRIPT","Script items","Lagsync"); var de=UI.GetValue("Misc","JAVASCRIPT","Script items","SWITCH delay"); realtime=Global.Realtime(); if (lasttime===0) lasttime=realtime; if (realtime-lasttime>=de){ if (status===1){ aad=1+Math.floor(Math.random()*3); aa=aad; } if (status===2){ aad=aa+1; if (aad>3) aad=1; aa=aad; } if (aa===1) BRR1(); if (aa===2) BRR2(); if (aa===3) BRR3(); lasttime=realtime; } }
+function breakerdisable(){}
+
+// Main switch
+function lagsyncmain(){
+  if (!InGameAlive()) return;
+  var mode = UI.GetValue("Misc","JAVASCRIPT","Script items","Type");
+  var breaker = UI.GetValue("Misc","JAVASCRIPT","Script items","Breaker");
+
+  if (mode===0){ lagsyncdisable(); return; }
+  if (mode===1){ lagsyncv2(); return; }
+  if (mode===2){ lagsyncv1(); return; }
+  if (mode===3){ lagsyncv3(); return; }
+  if (mode===4){ lagsyncv4(); return; }
+  if (mode===5){ lagsyncv5(); return; }
+  if (mode===6){ lagsync_desyncwave(); return; }
+  if (mode===7){ lagsync_lbypulse(); return; }
+  if (mode===8){ lagsync_safepick(); return; }
+
+  if (breaker===0) breakerdisable();
+  if (breaker===1) breakerv1();
+  if (breaker===2) breakerv2();
+}
+
+// ========== HUD ==========
+function draw_arc(k,l,bi,bj,bg,bk,Z){
+  var bh=(2*Math.PI)/30, step=Math.PI/180, bf=bi-bk, be=(bj+bg)*step, bjr=(bj*Math.PI)/180;
+  for (;bi>bf;--bi) for (var bl=bjr; bl<be; bl+=bh){
+    var ba=Math.round(k+bi*Math.cos(bl)), bc=Math.round(l+bi*Math.sin(bl));
+    var bb=Math.round(k+bi*Math.cos(bl+bh)), bd=Math.round(l+bi*Math.sin(bl+bh));
+    Render.Line(ba,bc,bb,bd,Z);
+  }
+}
+function in_bounds(o,k,l,br,bs){ return (o[0]>k)&&(o[1]>l)&&(o[0]<br)&&(o[1]<bs); }
+
+function main_aa(){
+  if (!InGameAlive()) return;
+  var k=UI.GetValue("Misc","JAVASCRIPT","Script items","Antiaim_x");
+  var l=UI.GetValue("Misc","JAVASCRIPT","Script items","Antiaim_y");
+  var fnt = g_font || Render.AddFont("Verdana",7,100);
+
+  var bx=Local.GetRealYaw(), bu=Local.GetFakeYaw();
+  var u=Math.min(Math.abs(bx-bu)/2,60).toFixed(1);
+  var by=Math.min(Math.round(1.7*Math.abs(u)),100);
+  var inv=UI.IsHotkeyActive("Anti-Aim","Fake angles","Inverter");
+  var bz = inv? "<-" : "->";
+  var s = "    FAKE(" + u.toString() + ") | safety: " + by.toString() + "% | side: " + bz + "   REЗOLVER   ";
+  var bt=Render.TextSizeCustom(s,fnt)[0]+8;
+
+  Render.FilledRect(k-bt,l,bt,2,[89,89+(u/2|0),189,100]);
+  Render.FilledRect(k-bt,l+2,bt,18,[17,17,17,180]);
+  Render.StringCustom(k+5-bt,l+5,0,s,[0,0,0,180],fnt);
+  Render.StringCustom(k+4-bt,l+4,0,s,[204,0,204,255],fnt);
+  // вместо Render.Circle — только дуга, чтобы не падать на билдах без Circle
+  draw_arc(k+7-bt,l+10,5,0,u*6,2,[0,255,0,255]);
+
+  if (Global.IsKeyPressed(1)&&UI.IsMenuOpen()){
+    var cur=Global.GetCursorPosition();
+    if (in_bounds(cur,k-bt,l,k+bt,l+30)){
+      UI.SetValue("Misc","JAVASCRIPT","Script items","Antiaim_x",cur[0]+bt/2);
+      UI.SetValue("Misc","JAVASCRIPT","Script items","Antiaim_y",cur[1]-20);
+    }
+  }
+}
+
+// ========== ResolverX (unchanged core) ==========
+var RZ={ pending:[], st:{}, lastToggle:0.0, baim_until:0.0, curTarget:-1, baim_active:false };
+var RZ_BAIM_PATHS=[["Rage","General","Force body aim"],["Rage","Aimbot","Force body aim"],["Ragebot","General","Force body aim"],["Ragebot","Accuracy","Force body aim"]];
+var RZ_SAFE_PATHS=[["Rage","General","Force safe point"],["Rage","Aimbot","Force safe point"],["Ragebot","General","Force safe point"],["Ragebot","Accuracy","Force safe point"]];
+var RZ_SEEDS=[{invert:null,baim:false,safepoint:false},{invert:true,baim:false,safepoint:false},{invert:null,baim:true,safepoint:false},{invert:true,baim:true,safepoint:false},{invert:null,baim:false,safepoint:true},{invert:true,baim:false,safepoint:true}];
+function RZ_len(a){ return Math.sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2]); }
+function RZ_sub(a,b){ return [a[0]-b[0],a[1]-b[1],a[2]-b[2]]; }
+function RZ_dist_point_to_segment(P,A,B){
+  var L=RZ_sub(P,A), D=RZ_sub(B,A), len=RZ_len(D); if(len<1e-6) return RZ_len(L);
+  var n=[D[0]/len,D[1]/len,D[2]/len], t=L[0]*n[0]+L[1]*n[1]+L[2]*n[2];
+  if(t<0) t=0; if(t>len) t=len;
+  var C=[A[0]+n[0]*t,A[1]+n[1]*t,A[2]+n[2]*t];
+  return RZ_len(RZ_sub(P,C));
+}
+function RZ_isActive(p){ try{return UI.IsHotkeyActive(p[0],p[1],p[2]);}catch(e){return false;} }
+function RZ_toggle(p){ try{return UI.ToggleHotkey(p[0],p[1],p[2]);}catch(e){return false;} }
+function RZ_setHotkey(paths,on){
+  var now=Global.Realtime(); if(now-RZ.lastToggle<0.05) return;
+  var active=false, idx=-1, i;
+  for(i=0;i<paths.length;i++){ if(RZ_isActive(paths[i])){ active=true; idx=i; break; } }
+  if(on && !active){ for(i=0;i<paths.length;i++){ if(RZ_toggle(paths[i])){ RZ.lastToggle=now; break; } } }
+  if(!on && active){ if(idx>=0){ if(RZ_toggle(paths[idx])) RZ.lastToggle=now; } }
+}
+function RZ_setBAIM(on){ RZ_setHotkey(RZ_BAIM_PATHS,on); }
+function RZ_setSAFE(on){ RZ_setHotkey(RZ_SAFE_PATHS,on); }
+function RZ_setInvert(desired){
+  if (desired===null) return;
+  var cur=UI.IsHotkeyActive("Anti-Aim","Fake angles","Inverter");
+  if (!!desired !== !!cur) UI.ToggleHotkey("Anti-Aim","Fake angles","Inverter");
+}
+function RZ_get(e){ if(!RZ.st[e]) RZ.st[e]={seed:0,lastApplied:-1,miss:0,hit:0,lowdelta_until:0.0}; return RZ.st[e]; }
+function RZ_nearestEnemyToImpact(pos){
+  var list=Entity.GetPlayers(), best=-1, bestD=1e9;
+  for (var i=0;i<list.length;i++){
+    var e=list[i]; if(!Entity.IsEnemy(e)||!Entity.IsAlive(e)||Entity.IsDormant(e)) continue;
+    var head=Entity.GetHitboxPosition(e,0); if(!head) continue;
+    var d=RZ_len(RZ_sub(pos,head)); if(d<bestD){ bestD=d; best=e; }
+  }
+  return best;
+}
+function RZ_OnBulletImpact(){
+  if (!UI.GetValue("Misc","JAVASCRIPT","Script items","ResolverX enabled")) return;
+  var me=Entity.GetLocalPlayer(); if (!me) return;
+  var uid=Entity.GetEntityFromUserID(Event.GetInt("userid")); if (uid!==me) return;
+  var pos=[Event.GetFloat("x"),Event.GetFloat("y"),Event.GetFloat("z")];
+  var eye=Entity.GetEyePosition(me);
+  var target=RZ_nearestEnemyToImpact(pos);
+  if (target!==-1) RZ.pending.push({i:target,time:Global.Curtime(),pos:pos,start:eye});
+}
+function RZ_OnHurt(){
+  if (!UI.GetValue("Misc","JAVASCRIPT","Script items","ResolverX enabled")) return;
+  var me=Entity.GetLocalPlayer(); if(!me) return;
+  var attacker=Entity.GetEntityFromUserID(Event.GetInt("attacker")); if(attacker!==me) return;
+  var victim=Entity.GetEntityFromUserID(Event.GetInt("userid")); if(!victim) return;
+  RZ_get(victim).hit++;
+  var now=Global.Curtime(), idx=-1, bestDt=1e9;
+  for (var k=0;k<RZ.pending.length;k++){
+    if (RZ.pending[k].i===victim){
+      var dt=Math.abs(now-RZ.pending[k].time);
+      if (dt<bestDt){ bestDt=dt; idx=k; }
+    }
+  }
+  if (idx>=0) RZ.pending.splice(idx,1);
+  RZ_get(victim).seed=0;
+}
+function RZ_applySeed(sd){ RZ_setInvert(sd.invert); RZ_setBAIM(!!sd.baim); RZ_setSAFE(!!sd.safepoint); }
+function RZ_Update(){
+  if (!UI.GetValue("Misc","JAVASCRIPT","Script items","ResolverX enabled")){ RZ_setBAIM(false); RZ_setSAFE(false); RZ.curTarget=-1; RZ.baim_active=false; return; }
+  if (!InGameAlive()){ RZ_setBAIM(false); RZ_setSAFE(false); RZ.curTarget=-1; RZ.baim_active=false; return; }
+  var now=Global.Curtime();
+  for (var k=RZ.pending.length-1;k>=0;k--){
+    var it=RZ.pending[k];
+    if (now-it.time>0.20){
+      var head=Entity.GetHitboxPosition(it.i,0);
+      if (head){
+        var d=RZ_dist_point_to_segment(head,it.start,it.pos);
+        if (d<26){
+          var st=RZ_get(it.i);
+          st.miss++; st.seed=(st.seed+1)%RZ_SEEDS.length;
+          st.lowdelta_until=now+2.0; RZ.baim_until=now+1.0;
+        }
+      }
+      RZ.pending.splice(k,1);
+    }
+  }
+  var want_baim=(RZ.baim_until>now);
+  if(!want_baim){
+    var enemies=Entity.GetPlayers();
+    for (var i=0;i<enemies.length;i++){
+      var e=enemies[i]; if(!Entity.IsEnemy(e)) continue;
+      var st=RZ.st[e]; if (st && st.lowdelta_until>now){ want_baim=true; break; }
+    }
+  }
+  RZ_setBAIM(want_baim); RZ.baim_active=want_baim;
+
+  var target=-1;
+  if (RZ.pending.length>0) target=RZ.pending[RZ.pending.length-1].i;
+  if (target===-1){
+    var list=Entity.GetPlayers();
+    for (var j=0;j<list.length;j++){
+      var en=list[j]; if(!Entity.IsEnemy(en)||!Entity.IsAlive(en)||Entity.IsDormant(en)) continue;
+      var st2=RZ.st[en]; if(st2 && st2.lowdelta_until>now){ target=en; break; }
+    }
+  }
+  RZ.curTarget=target;
+  if (target!==-1){
+    var stt=RZ_get(target);
+    if (stt.seed!==stt.lastApplied){
+      var sd=RZ_SEEDS[stt.seed]; RZ_applySeed(sd); stt.lastApplied=stt.seed;
+    }
+  }
+}
+function RZ_DrawHUD(){
+  if (!UI.GetValue("Misc","JAVASCRIPT","Script items","Resolver HUD")) return;
+  if (!World.GetServerString()) return;
+
+  var x=UI.GetValue("Misc","JAVASCRIPT","Script items","RZ HUD X");
+  var y=UI.GetValue("Misc","JAVASCRIPT","Script items","RZ HUD Y");
+  var tg=RZ.curTarget, name=tg > 0 ? (Entity.GetName?Entity.GetName(tg):("ent#"+tg)) : "none";
+  var seedIdx=tg>0 ? RZ_get(tg).seed : -1, sd=(seedIdx>=0)?RZ_SEEDS[seedIdx]:null;
+  var seedName=sd?((sd.invert?"INV":"BASE")+(sd.baim?"+BAIM":"")+(sd.safepoint?"+SAFE":"")):"-";
+  var pending=RZ.pending.length, baim=RZ.baim_active;
+
+  var s="RESOLVER | target: "+name+" | seed: "+(seedIdx>=0?seedIdx:"-")+" ["+seedName+"] | BAIM: "+(baim?"ON":"OFF")+" | pending: "+pending;
+  var fnt=g_font||Render.AddFont("Verdana",7,100), bt=Render.TextSizeCustom(s,fnt)[0]+8;
+  var headColor = baim?[0,200,90,100]:[89,129,239,100];
+  Render.FilledRect(x-bt,y,bt,2,headColor);
+  Render.FilledRect(x-bt,y+2,bt,18,[17,17,17,180]);
+  Render.StringCustom(x+5-bt,y+5,0,s,[0,0,0,180],fnt);
+  Render.StringCustom(x+4-bt,y+4,0,s,baim?[0,220,120,255]:[204,0,204,255],fnt);
+  draw_arc(x+7-bt,y+10,5,0,(baim?360:0),2, baim?[0,255,0,220]:[120,120,120,120]);
+
+  if (Global.IsKeyPressed(1)&&UI.IsMenuOpen()){
+    var cur=Global.GetCursorPosition();
+    if (in_bounds(cur,x-bt,y,x+bt,y+30)){
+      UI.SetValue("Misc","JAVASCRIPT","Script items","RZ HUD X", cur[0]+bt/2);
+      UI.SetValue("Misc","JAVASCRIPT","Script items","RZ HUD Y", cur[1]-20);
+    }
+  }
+}
+
+// ========== Movement viz / Air Stuck (safe) ==========
+var vec3={__index:"vec3"};
+vec3.new=function(k,l,m){ if(k instanceof Array) return {x:k[0],y:k[1],z:k[2]}; return {x:k,y:l,z:m}; };
+vec3.unpack=function(n){ return [n.x,n.y,n.z]; };
+
+var info=menu_c.call(UI.AddCheckbox,"Draw movement info","mv_showinfo",null);
+var info_offset=menu_c.call(UI.AddSliderInt,"Info chart offset","mv_showinfo_offset",[0,500]);
+
+var jb=menu_c.call(UI.AddHotkey,"Movement","Jump bug",null);
+var cb=menu_c.call(UI.AddHotkey,"Movement","Crouch bug",null);
+var lj=menu_c.call(UI.AddHotkey,"Movement","Long jump",null);
+
+var hk_as = menu_c.call(UI.AddHotkey, "Exploit", "Air stuck", null);
+
+var as_saved_fl=-1, as_prev_fl=-1, as_suppressed_move=false;
+function AirStuck_Update(){
+  if (!World.GetServerString()){
+    if (as_saved_fl!==-1 && as_prev_fl!==as_saved_fl){ UI.SetValue("Anti-Aim","Fake-Lag","Limit",as_saved_fl); as_prev_fl=as_saved_fl; }
+    as_saved_fl=-1; as_suppressed_move=false; return;
+  }
+  var me=Entity.GetLocalPlayer(); if(!me||!Entity.IsAlive(me)){
+    if (as_saved_fl!==-1 && as_prev_fl!==as_saved_fl){ UI.SetValue("Anti-Aim","Fake-Lag","Limit",as_saved_fl); as_prev_fl=as_saved_fl; }
+    as_saved_fl=-1; as_suppressed_move=false; return;
+  }
+  var active = menu_c.get_hotkey(hk_as);
+  var flags = Entity.GetProp(me,"CBasePlayer","m_fFlags"); var on_ground=(flags&1);
+  if (active && !on_ground){
+    if (as_saved_fl===-1) as_saved_fl=UI.GetValue("Anti-Aim","Fake-Lag","Limit");
+    if (as_prev_fl!==16){ UI.SetValue("Anti-Aim","Fake-Lag","Limit",16); as_prev_fl=16; }
+    if (!as_suppressed_move){ Cheat.ExecuteCommand("-forward;-back;-moveleft;-moveright"); as_suppressed_move=true; }
+  } else {
+    if (as_saved_fl!==-1 && as_prev_fl!==as_saved_fl){ UI.SetValue("Anti-Aim","Fake-Lag","Limit",as_saved_fl); as_prev_fl=as_saved_fl; }
+    as_saved_fl=-1; if (as_suppressed_move){ as_suppressed_move=false; }
+  }
+}
+
+var max_radius=Math.PI*2, step=max_radius/24, unduck=false, is_lj=false, last_log=0, velocity_data=[];
+function do_jump_bug(Q){
+  if (!InGameAlive()) return;
+  var P=Entity.GetLocalPlayer();
+  if (!menu_c.get_hotkey(jb)&&!menu_c.get_hotkey(cb)){ if(unduck){ unduck=false; Cheat.ExecuteCommand("-duck"); } return; }
+  if (unduck){ unduck=false; Cheat.ExecuteCommand("-duck"); }
+  var N=Entity.GetProp(P,"CBasePlayer","m_fFlags");
+  var O0=vec3.new(Entity.GetProp(P,"CBaseEntity","m_vecOrigin"));
+  var V0=Entity.GetProp(P,"CBasePlayer","m_vecVelocity[0]")||[0,0,0], T0=vec3.new(V0);
+  var T={x:T0.x*Global.TickInterval(),y:T0.y*Global.TickInterval(),z:0};
+  var O={x:O0.x+T.x,y:O0.y+T.y,z:O0.z+T.z};
+  if (N&1){ if(Q&&UserCMD&&UserCMD.ForceJump) UserCMD.ForceJump(); return; }
+  for (var f=0; f<max_radius; f+=step){
+    var R={x:O.x+Math.cos(f)*17,y:O.y+Math.sin(f)*17,z:O.z};
+    var M={x:O.x+Math.cos(f)*17,y:O.y+Math.sin(f)*17,z:O.z-9};
+    var S=Trace.Line(P,[R.x,R.y,R.z],[M.x,M.y,M.z]);
+    if (!S || typeof S[1]==="undefined") continue;
+    if (S[1]!==0 && S[1]!==1){ Cheat.ExecuteCommand("+duck"); unduck=true; return; }
+  }
+}
+function do_long_jump(){
+  if (!InGameAlive()) return;
+  var P=Entity.GetLocalPlayer(), N=Entity.GetProp(P,"CBasePlayer","m_fFlags");
+  if (!menu_c.get_hotkey(lj)){ if(is_lj){ is_lj=false; Cheat.ExecuteCommand("-jump"); UI.SetValue("Misc","Movement","Auto strafe",0); } return; }
+  if (N&1){ if(is_lj){ is_lj=false; Cheat.ExecuteCommand("-jump"); UI.SetValue("Misc","Movement","Auto strafe",0); } }
+  else{ if (!is_lj){ is_lj=true; UI.SetValue("Misc","Movement","Auto strafe",3); return; } Cheat.ExecuteCommand("+jump"); }
+}
+function do_velocity_info(){
+  if (!menu_c.get(info) || !InGameAlive()) return;
+  var P=Entity.GetLocalPlayer(), ss=Render.GetScreenSize(), k=ss[0], l=ss[1]+menu_c.get(info_offset);
+  var o=Entity.GetProp(P,"CBasePlayer","m_vecVelocity[0]")||[0,0,0], Y=Math.sqrt((o[0]||0)*(o[0]||0)+(o[1]||0)*(o[1]||0));
+  Render.String(k/2, l/2+150,1, Math.round(Y).toString(), [255,255,255,255], 4);
+  Render.String(k/2+1, l/2+185,1, "u/s", [225,225,225,255], 2);
+  Render.Line(k/2-100,l/2+25,k/2-100,l/2+145,[100,100,100,255]);
+  Render.Line(k/2-115,l/2+130,k/2+95,l/2+130,[100,100,100,255]);
+  if (Global.Curtime()-last_log>Global.TickInterval()){ last_log=Global.Curtime(); velocity_data.unshift([Y,true]); }
+  if (velocity_data.length>40) velocity_data.pop();
+  for (var f=0; f<velocity_data.length-1; f++){
+    var U=velocity_data[f][0], X=velocity_data[f+1][0];
+    Render.Line(k/2+90-(f-1)*5, l/2+130-(clamp(U,0,450)*75/320), k/2+90-f*5, l/2+130-(clamp(X,0,450)*75/320), [200,200,200,255]);
+  }
+}
+
+// ========== Legit AA on E ==========
+var LEGIT_E_KEY = 0x45, legitE_saved_fl = -1, legitE_prev_fl = -1, legitE_active = false;
+function LegitAA_E_Draw() {
+  if (!InGameAlive()) { legitE_active = false; return; }
+  var pressed = Global.IsKeyPressed(LEGIT_E_KEY); if (!pressed) { legitE_active = false; return; }
+  var me = Entity.GetLocalPlayer(), inv = UI.IsHotkeyActive("Anti-Aim", "Fake angles", "Inverter");
+  var sign = inv ? -1 : 1; var vel = Entity.GetProp(me, "CBasePlayer", "m_vecVelocity[0]")||[0,0,0];
+  var speed2d = Math.sqrt((vel[0]||0)*(vel[0]||0) + (vel[1]||0)*(vel[1]||0));
+  var flags = Entity.GetProp(me, "CBasePlayer", "m_fFlags"); var on_ground = (flags & 1);
+  var t = (Math.floor(Global.Realtime() * 12) % 2) ? 1 : -1;
+  var amp = 2; if (speed2d > 20) amp = 3; if (!on_ground) amp = 4;
+  var real = sign * (t * amp), fake = 0, lby  = 0;
+  AntiAim.SetOverride(1); AntiAim.SetRealOffset(real); AntiAim.SetFakeOffset(fake); AntiAim.SetLBYOffset(lby);
+  legitE_active = true;
+}
+function LegitAA_E_UpdateFL() {
+  if (!World.GetServerString()) {
+    if (legitE_saved_fl !== -1 && legitE_prev_fl !== legitE_saved_fl) { UI.SetValue("Anti-Aim","Fake-Lag","Limit",legitE_saved_fl); legitE_prev_fl=legitE_saved_fl; }
+    legitE_saved_fl = -1; legitE_active=false; return;
+  }
+  if (legitE_active) {
+    if (legitE_saved_fl === -1) legitE_saved_fl = UI.GetValue("Anti-Aim","Fake-Lag","Limit");
+    if (legitE_prev_fl !== 3) { UI.SetValue("Anti-Aim","Fake-Lag","Limit",3); legitE_prev_fl=3; }
+  } else {
+    if (legitE_saved_fl !== -1 && legitE_prev_fl !== legitE_saved_fl) { UI.SetValue("Anti-Aim","Fake-Lag","Limit",legitE_saved_fl); legitE_prev_fl=legitE_saved_fl; }
+    legitE_saved_fl = -1;
+  }
+}
+
+// Visual effect on kill (safe)
+function get(bp){ return UI.GetValue("Misc","JAVASCRIPT","Script items", bp); }
+function render_effect(){
+  if (alpha===0) return;
+  var dur=get("Effect duration"); if (!dur||dur<=0) dur=1;
+  var cd=(1/dur)*Global.Frametime()*255, ce=(1/dur)*Global.Frametime()*360;
+  alpha=clamp(alpha-cd,0,255); size=clamp(size-ce,0,360);
+  var k=Global.GetScreenSize()[0], l=Global.GetScreenSize()[1];
+  Render.GradientRect(0,0,k,size,0,[128,195,255,alpha],[128,195,255,0]);
+  Render.GradientRect(0,l-size,k,size,0,[128,195,255,0],[128,195,255,alpha]);
+  Render.GradientRect(k-size,0,size,l,1,[128,195,255,0],[128,195,255,alpha]);
+  Render.GradientRect(0,0,size,l,1,[128,195,255,alpha],[128,195,255,0]);
+}
+function on_death_effect(){
+  var attacker=Entity.GetEntityFromUserID(Event.GetInt("attacker"));
+  var victim=Entity.GetEntityFromUserID(Event.GetInt("userid"));
+  var me=Entity.GetLocalPlayer();
+  if (me && attacker===me && victim!==me){ alpha=255; size=360; }
+}
+
+// Aspect ratio
+UI.AddSliderInt("      REZOLVER_SCRIPT", 0, 0);
+UI.AddSliderInt("Aspect ratio", 0, 500);
+function fsn(){
+  var v=UI.GetValue("Misc","JAVASCRIPT","Script items","Aspect ratio");
+  if (Global.FrameStage()===5) Cheat.ExecuteCommand("r_aspectratio " + (v.toString()/100));
+}
+
+// Anti Bruteforce (original)
+UI.AddDropdown("Anti Bruteforce", ["Off","On Hit","On Shot"]);
+function GetScriptOption(g){ return UI.GetValue("Misc","JAVASCRIPT","Script items", g); }
+function radian(cc){ return cc*Math.PI/180.0; }
+function ExtendVector(bo,bl,bm){ var bn=radian(bl); return [bm*Math.cos(bn)+bo[0], bm*Math.sin(bn)+bo[1], bo[2]]; }
+function VectorAdd(cg,ch){ return [cg[0]+ch[0],cg[1]+ch[1],cg[2]+ch[2]]; }
+function VectorSubtract(cg,ch){ return [cg[0]-ch[0],cg[1]-ch[1],cg[2]-ch[2]]; }
+function VectorMultiply(cg,ch){ return [cg[0]*ch[0],cg[1]*ch[1],cg[2]*ch[2]]; }
+function VectorLength(k,l,m){ return Math.sqrt(k*k+l*l+m*m); }
+function VectorNormalize(o){ var G=VectorLength(o[0],o[1],o[2]); return [o[0]/G,o[1]/G,o[2]/G]; }
+function VectorDot(cg,ch){ return cg[0]*ch[0]+cg[1]*ch[1]+cg[2]*ch[2]; }
+function VectorDistance(cg,ch){ return VectorLength(cg[0]-ch[0],cg[1]-ch[1],cg[2]-ch[2]); }
+function ClosestPointOnRay(K,J,I){
+  var L=VectorSubtract(K,J), F=VectorSubtract(I,J), G=VectorLength(F[0],F[1],F[2]);
+  F=VectorNormalize(F); var H=VectorDot(F,L); if (H<0.0) return J; if (H>G) return I;
+  return VectorAdd(J, VectorMultiply(F,[H,H,H]));
+}
+function Flip(){ UI.ToggleHotkey("Anti-Aim","Fake angles","Inverter"); }
+var lastHitTime=0.0, lastImpactTimes=[0.0], lastImpacts=[[0.0,0.0,0.0]];
+function OnHurt(){
+  if (GetScriptOption("Anti Bruteforce")===0) return;
+  if (Entity.GetEntityFromUserID(Event.GetInt("userid"))!==Entity.GetLocalPlayer()) return;
+  var hg=Event.GetInt("hitgroup");
+  if (hg===1||hg===6||hg===7){
+    var now=Global.Curtime(); if (Math.abs(lastHitTime-now)>0.5){ lastHitTime=now; Flip(); }
+  }
+}
+function OnBulletImpact(){
+  if (GetScriptOption("Anti Bruteforce")!==2) return;
+  var now=Global.Curtime(); if (Math.abs(lastHitTime-now)<0.5) return;
+  var uid=Entity.GetEntityFromUserID(Event.GetInt("userid"));
+  var impact=[Event.GetFloat("x"),Event.GetFloat("y"),Event.GetFloat("z"), now];
+  var eye;
+  if (Entity.IsValid(uid)&&Entity.IsEnemy(uid)){
+    if (!Entity.IsDormant(uid)) eye=Entity.GetEyePosition(uid);
+    else{
+      if (Math.abs(lastImpactTimes[uid]-now)<0.1) eye=lastImpacts[uid];
+      else{ lastImpacts[uid]=impact; lastImpactTimes[uid]=now; return; }
+    }
+    var me=Entity.GetLocalPlayer();
+    var myEye=Entity.GetEyePosition(me);
+    var myOrg=Entity.GetProp(me,"CBaseEntity","m_vecOrigin");
+    var mid=VectorMultiply(VectorAdd(myEye,myOrg),[0.5,0.5,0.5]);
+    var closest=ClosestPointOnRay(mid,eye,impact), d=VectorDistance(mid,closest);
+    if (d<128.0){
+      var ry=Local.GetRealYaw(), fy=Local.GetFakeYaw();
+      var c1=ClosestPointOnRay(myEye,eye,impact), d1=VectorDistance(myEye,c1);
+      var c2=ClosestPointOnRay(myOrg,eye,impact), d2=VectorDistance(myOrg,c2);
+      var best,w,j;
+      if (d<d1&&d<d2){ best=closest; w=ExtendVector(closest,ry+180.0,10.0); j=ExtendVector(closest,fy+180.0,10.0); }
+      else if (d2<d1){
+        best=c2;
+        var x1=ExtendVector(closest,ry-30.0+100.0,10.0), x2=ExtendVector(closest,ry-30.0-100.0,10.0);
+        var k1=ExtendVector(closest,fy-30.0+100.0,10.0), k2=ExtendVector(closest,fy-30.0-100.0,10.0);
+        w=(VectorDistance(c2,x1)<VectorDistance(c2,x2))?x1:x2;
+        j=(VectorDistance(c2,k1)<VectorDistance(c2,k2))?k1:k2;
+      } else { best=c1; w=ExtendVector(closest,ry,10.0); j=ExtendVector(closest,fy,10.0); }
+      if (VectorDistance(best,j)<VectorDistance(best,w)){ lastHitTime=now; Flip(); }
+    }
+    lastImpacts[uid]=impact; lastImpactTimes[uid]=now;
+  }
+}
+
+// ========== CreateMove ==========
+function on_create_move(){
+  do_jump_bug(menu_c.get_hotkey(jb));
+  do_long_jump();
+  RZ_Update();
+  AirStuck_Update();
+  LegitAA_E_UpdateFL();
+  SP_UpdateFL();
+}
+function reset(){ last_log=Global.Curtime(); velocity_data=[]; }
+
+// ========== Logs ==========
+Cheat.Print("REZOLVER | crash-safe hotfix loaded (LBY Pulse + Safe Peek + A1–A4 + ResolverX)\n");
+
+// ========== Register ==========
+Register("player_connect_full", on_load);
+
+Register("player_death", on_death);
+Register("player_death", on_death_effect);
+
+Register("CreateMove", on_create_move);
+Register("Draw", do_velocity_info);
+Register("player_connect_full", reset);
+Register("Draw", main_aa);
+Register("Draw", lagsyncmain);
+Register("Draw", RZ_DrawHUD);
+Register("Draw", LegitAA_E_Draw);
+
+Register("player_hurt", OnHurt);
+Register("bullet_impact", OnBulletImpact);
+
+// ResolverX
+Register("bullet_impact", RZ_OnBulletImpact);
+Register("player_hurt", RZ_OnHurt);
+
+// Safe peek
+Register("weapon_fire", SP_OnWeaponFire);
+
+// Init menu + defaults
+addtomenu();
+UI.SetValue("Misc","JAVASCRIPT","Script items","LBY pulse A", 40);
+UI.SetValue("Misc","JAVASCRIPT","Script items","LBY pulse B", 60);
+UI.SetValue("Misc","JAVASCRIPT","Script items","LBY pulse hold", 0.25);
+
+// Safe peek defaults
+UI.SetValue("Misc","JAVASCRIPT","Script items","SP idle real", 12);
+UI.SetValue("Misc","JAVASCRIPT","Script items","SP idle fake", 20);
+UI.SetValue("Misc","JAVASCRIPT","Script items","SP idle LBY", 40);
+UI.SetValue("Misc","JAVASCRIPT","Script items","SP peek real", 8);
+UI.SetValue("Misc","JAVASCRIPT","Script items","SP peek fake", 32);
+UI.SetValue("Misc","JAVASCRIPT","Script items","SP peek LBY", 60);
+UI.SetValue("Misc","JAVASCRIPT","Script items","SP accel threshold", 28);
+UI.SetValue("Misc","JAVASCRIPT","Script items","SP hold", 0.22);
+UI.SetValue("Misc","JAVASCRIPT","Script items","SP only on shot", 0);
+UI.SetValue("Misc","JAVASCRIPT","Script items","SP FL boost", 1);
+UI.SetValue("Misc","JAVASCRIPT","Script items","SP FL limit", 16);
+UI.SetValue("Misc","JAVASCRIPT","Script items","SP LBY jitter", 3);
+UI.SetValue("Misc","JAVASCRIPT","Script items","SP dynamic scale", 1);
+UI.SetValue("Misc","JAVASCRIPT","Script items","SP ground scale %", 100);
+UI.SetValue("Misc","JAVASCRIPT","Script items","SP air scale %", 115);
+UI.SetValue("Misc","JAVASCRIPT","Script items","SP slow scale %", 90);
+UI.SetValue("Misc","JAVASCRIPT","Script items","SP slow speed threshold", 20);
+
+// AA min diff default
+UI.SetValue("Misc","JAVASCRIPT","Script items","AA min diff", 20);
