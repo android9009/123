@@ -234,13 +234,13 @@ function main_dt() {
     var font = Render.AddFont("Verdana", 7, 100);
     var fontbullet = Render.AddFont("bullet", 18, 100);
     if (CanShoot && Exploit.GetCharge() == 1 && UI.IsHotkeyActive("Rage", "Exploits", "Doubletap")) {
-        var text = "DT [000] | tickbase(v): 16";
+        var text = "DT [skeet] | tickbase(v): 16";
         var color = [89, 119, 239, 255];
     } else if (CanShoot && Exploit.GetCharge() == 1 && UI.IsHotkeyActive("Rage", "Exploits", "Hide shots")) {
-        var text = "DT [000] | tickbase(v): 7";
+        var text = "DT [skeet] | tickbase(v): 7";
         var color = [89, 119, 239, 255];
     } else {
-        var text = "DT [000] | tickbase(v): 0";
+        var text = "DT [skeet] | tickbase(v): 0";
         var color = [89, 89, 89, 255];
     }
     var w = Render.TextSizeCustom(text, font)[0] + 8;

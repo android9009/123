@@ -9,11 +9,11 @@ function Safe_Head()
 
         if (UI.GetValue("Misc", "JAVASCRIPT", "Script items", "Safe head") && UI.IsHotkeyActive("Anti-Aim", "Extra", "Slow walk"))
         {
-            UI.SetValue("Anti-Aim", "Rage Anti-Aim", "Yaw offset", 0);
+            UI.SetValue("Anti-Aim", "Rage Anti-Aim", "Yaw offset", 10);
             UI.SetValue("Anti-Aim", "Rage Anti-Aim", "Jitter offset", 0);
             AntiAim.SetOverride(1);
             AntiAim.SetFakeOffset(0);
-            AntiAim.SetRealOffset(-16);
+            AntiAim.SetRealOffset(-30);
         }
         else
         {

@@ -1,268 +1,178 @@
-UI.AddLabel("             Aimbot logging");
-
-hitboxes = [
-    'generic',
-    'head',
-    'chest',
-    'stomach',
-    'left arm',
-    'right arm',
-    'left leg',
-    'right leg',
-    '?'
-];
-var scriptitems = ("Misc", "JAVASCRIPT", "Script items");
-var shots = 0;
-var predicthc = 0;
-var safety = 0;
-var hitboxName = "";
-var choked = 0;
-var exploit = 0;
-var logs = [];
-var logsct = [];
-var logsalpha = [];
-function getHitboxName(index)
-{
-    switch (index)
-    {
-        case 0:
-            hitboxName = "head";
-            break;
-        case 1:
-            hitboxName = "head";
-            break;
-        case 2:
-            hitboxName = "stomach";
-            break;
-        case 3:
-            hitboxName = "stomach";
-            break;
-        case 4:
-            hitboxName = "stomach";
-            break;
-        case 5:
-            hitboxName = "chest";
-            break;
-        case 6:
-            hitboxName = "chest";
-            break;
-        case 7:
-            hitboxName = "left leg";
-            break;
-        case 8:
-            hitboxName = "right leg";
-            break;
-        case 9:
-            hitboxName = "left leg";
-            break;
-        case 10:
-            hitboxName = "right leg";
-            break;
-        case 11:
-            hitboxName = "left leg";
-            break;
-        case 12:
-            hitboxName = "right leg";
-            break;
-        case 13:
-            hitboxName = "left arm";
-            break;
-        case 14:
-            hitboxName = "right arm";
-            break;
-        case 15:
-            hitboxName = "left arm";
-            break;
-        case 16:
-            hitboxName = "left arm";
-            break;
-        case 17:
-            hitboxName = "right arm";
-            break;
-        case 18:
-            hitboxName = "right arm";
-            break;
-        default:
-            hitboxName = "body";
-    }
-    return hitboxName;
-}
-function HitgroupName(index) {
-    return hitboxes[index] || 'body';
-}
-
-var target = -1;
-var shots_fired = 0;
-var hits = 0;
-var lastUpdate = 0;
-var logged = false;
-
-function ragebot_fire() {
-	predicthc = Event.GetInt("hitchance");
-	safety = Event.GetInt("safepoint");
-	hitboxName = getHitboxName(Event.GetInt("hitbox"));
-	exploit = (Event.GetInt("exploit")+1).toString();
-  target = Event.GetInt("target_index");
-  shots_fired++;
-  logged = false;
-  lastUpdate = Globals.Curtime();
-}
-
-function hitlog() {
-    var hit = Entity.GetEntityFromUserID(Event.GetInt("userid"));
-    var attacker = Entity.GetEntityFromUserID(Event.GetInt("attacker"));
-    if (attacker == Entity.GetLocalPlayer() && hit == target) hits++;
-
-    var hittype = "Hit ";
-    me = Entity.GetLocalPlayer();
-    hitbox = Event.GetInt('hitgroup');
-    target_damage = Event.GetInt("dmg_health");
-    target_health = Event.GetInt("health");
-    victim = Event.GetInt('userid');
-    attacker = Event.GetInt('attacker');
-    weapon = Event.GetString('weapon');
-    victimIndex = Entity.GetEntityFromUserID(victim);
-    attackerIndex = Entity.GetEntityFromUserID(attacker);
-    name = Entity.GetName(victimIndex);
-  	var simtime = Globals.Tickcount() % 17;
-
-    var flags = "";
-
-    if (exploit == 2)
-      flags += "T";
-
-    flags += "B";
-
-    if (hitbox == 1)
-      flags += "H";
-
-  	if (safety == 1) {
-  		safety = "true";
-  	}
-  	else {
-  		safety = "false";
-  	}
-
-    if (weapon == "hegrenade")
-      hittype = "Naded ";
-    else if (weapon == "inferno")
-      hittype = "Burned ";
-    else if (weapon == "knife")
-      hittype = "Knifed ";
-
-    if (me == attackerIndex && me != victimIndex) {
-		Cheat.PrintColor([0, 200, 0, 255], "[gamesense] ");
-    if (hittype == "Hit ") {
-        if (UI.GetValue("Script items", "Enable chat logging")) {
-            Cheat.PrintChat(" \x08[\x0cgamesense\x08] [\x0c"+shots.toString()+"\x08] "+hittype+name+"'s \x10"+HitgroupName(hitbox)+"\x08 for \x07"+target_damage.toString()+"\x08 ("+target_health.toString()+" remaining) aimed=\x10"+hitboxName+"\x08("+predicthc.toString()+"%%) safety=\x03"+safety+"\x08 (\x10"+flags+"\x08) (\x10"+simtime+"\x08:\x10"+exploit+"\x08)\n");
-        }
-      Cheat.Print("["+shots.toString()+"] "+hittype+name+"'s "+HitgroupName(hitbox)+" for "+target_damage.toString()+" ("+target_health.toString()+" remaining) aimed="+hitboxName+"("+predicthc.toString()+"%%) safety="+safety+" ("+flags+") ("+simtime+":"+exploit+")\n");
-  		logs.push("["+shots.toString()+"] "+hittype+name+"'s "+HitgroupName(hitbox)+" for "+target_damage.toString()+" ("+target_health.toString()+" remaining) aimed="+hitboxName+"("+predicthc.toString()+"%%) safety="+safety+" ("+flags+") ("+simtime+":"+exploit+")");
-    }
-    else {
-      Cheat.Print("["+shots.toString()+"] "+hittype+name+"'s "+HitgroupName(hitbox)+" for "+target_damage.toString()+" ("+target_health.toString()+" remaining) \n");
-  		logs.push("["+shots.toString()+"] "+hittype+name+"'s "+HitgroupName(hitbox)+" for "+target_damage.toString()+" ("+target_health.toString()+" remaining)");
-    }
-
-		logsct.push(Globals.Curtime());
-		logsalpha.push(255);
-	}
-
-  if (shots == 99)
-    shots = 0;
-  else
-    shots++;
-
-}
-
-function removelogs() {
-	if (logs.length > 6) {
-		logs.shift();
-		logsct.shift();
-		logsalpha.shift();
-	}
-
-	if (logsct[0] + 6.5 < Globals.Curtime()) {
-		logsalpha[0] -= Globals.Frametime() * 600;
-		if (logsalpha[0] < 0) {
-			logs.shift();
-			logsct.shift();
-			logsalpha.shift();
-		}
-	}
-}
-
-function item_purchase() {
-	Cheat.PrintColor([0, 200, 0, 255], "[gamesense] ");
-	Cheat.Print(Entity.GetName(Entity.GetEntityFromUserID(Event.GetInt("userid")))+" bought "+Event.GetString("weapon")+"\n");
-	logs.push(Entity.GetName(Entity.GetEntityFromUserID(Event.GetInt("userid")))+" bought "+Event.GetString("weapon")+"");
-	logsct.push(Globals.Curtime());
-	logsalpha.push(255);
-}
-
-function onDraw() {
-    if (!World.GetServerString()) return;
-    var font = Render.AddFont("Lucida Console", 8, 0);
-
-
-	for (i = 0; i < logs.length; i++) {
-        Render.StringCustom(4, 4 + 13*i, 0, logs[i], [0, 0, 0, logsalpha[i]], font);
-		Render.StringCustom(3, 3 + 13*i, 0, logs[i], [255, 255, 255, logsalpha[i]], font);
-    }
-
-    if (shots_fired > hits && (Globals.Curtime() - lastUpdate > 0.33)) {
-      if (Globals.Curtime() - lastUpdate > 1) {
-        shots_fired = 0;
-        hits = 0;
-      }
-      if (!logged) {
-        var simtime = Globals.Tickcount() % 16;
-        logged = true;
-        var issafe = "true";
-        var reason = "?";
-        if (safety == 0) {
-          issafe = "false";
-        }
-
-		if (Entity.IsAlive(target) == false)
-			reason = "death";
-		else if (Entity.IsAlive(Entity.GetLocalPlayer()) == false)
-			reason = "dead";
-        else if (safety == true && predicthc < 76)
-            reason = "spread";
-        else if (safety == true && predicthc > 76)
-            reason = "prediction error";
-
-        var flags = "";
-
-        if (exploit == 2)
-          flags += "T";
-
-          flags += "B";
-
-        Cheat.PrintColor([0, 200, 0, 255], "[gamesense] ");
-        Cheat.Print("["+shots.toString()+"] "+"Missed "+Entity.GetName(target)+"'s "+hitboxName+"("+predicthc.toString()+"%%) due to "+reason+", safety="+issafe+" ("+flags+") ("+simtime+":"+exploit+")\n");
-            logs.push("["+shots.toString()+"] "+"Missed "+Entity.GetName(target)+"'s "+hitboxName+"("+predicthc.toString()+"%%) due to "+reason+", safety="+issafe+" ("+flags+") ("+simtime+":"+exploit+")");
-
-            if (UI.GetValue("Script items", "Enable chat logging")) {
-                Cheat.PrintChat(" \x08[\x0cgamesense\x08] [\x0c"+shots.toString()+"\x08] "+"\x08Missed "+Entity.GetName(target)+"'s \x10"+hitboxName+"\x08("+predicthc.toString()+"%%) due to \x07"+reason+"\x08, safety=\x03"+issafe+"\x08 (\x10"+flags+"\x08) (\x10"+simtime+"\x08:\x10"+exploit+"\x08)");
-            }
-        logsct.push(Globals.Curtime());
-    		logsalpha.push(255);
-        if (shots == 99)
-          shots = 0;
-        else
-          shots++;
-      }
+function pHurt() {
+    attackerEntity = Entity.GetEntityFromUserID(Event.GetInt("attacker"));
+    localEntity = Entity.GetLocalPlayer();
+    
+    if (attackerEntity == localEntity) {
+        victimName = Entity.GetName(Entity.GetEntityFromUserID(Event.GetInt("userid")));
+        
+        //Get hitgroup as a string
+        
+        hitboxName = hitgroupToHitbox(Event.GetInt("hitgroup"));
+        
+        damageDone = Event.GetInt("dmg_health");
+        healthRemaining = Event.GetInt("health");
+        
+        hurtLogs.push([victimName, hitboxName, damageDone, healthRemaining, 0, 255, (Math.random() * (0.2 - 1.200) + 1.200).toFixed(4), Globals.Curtime()]);
     }
 }
+
+// [ victimName, hitboxName, damageDone, healthRemaining, curLength, opacity ];
+hurtLogs = [ ];
 
 function main() {
-	Global.RegisterCallback("ragebot_fire", "ragebot_fire");
-	Global.RegisterCallback("item_purchase", "item_purchase");
-  Global.RegisterCallback("player_hurt", "hitlog");
-	Global.RegisterCallback("Draw", "onDraw");
-	Global.RegisterCallback("Draw", "removelogs");
+    Cheat.RegisterCallback("player_hurt", "pHurt");
+    Cheat.RegisterCallback("Draw", "drawLogs");
+    Cheat.RegisterCallback("Draw", "showOrHide");
+}
+
+typeSpeed = 0.05;
+fadeOutSpeed = 2;
+showDelayTime = typeSpeed + Globals.Curtime();
+function showOrHide() {
+    
+    
+    for (var i = 0; i < hurtLogs.length; i++) {
+        hurtLogs[i][4]++;
+        toSay = "Hit " + victimName + " in the " + hitboxName + " for " + damageDone + " damage (" + healthRemaining + " health remaining)";
+        if(Globals.Curtime() - hurtLogs[i][7] < 2)
+        {
+            continue
+        }
+        hurtLogs[i][5] -= Globals.Frametime() * 500;
+        
+        if (hurtLogs[i][5] < 0) {
+            hurtLogs.shift(i, 1);
+        }
+    }
+}
+
+function drawLogs() {
+    
+    textX = 10;
+    textY = 10;
+    textYIncrement = 15;
+    
+    textCol = [255, 255, 255];
+    if (UI.GetValue("Misc", "JAVASCRIPT", "Script items")) {
+        ( Global.Realtime(), 1, 1 );
+    }
+    
+    for (var i = 0; i < hurtLogs.length; i++) {
+        currentLog = hurtLogs[i];
+        
+        victimName = currentLog[0];
+        hitboxName = currentLog[1];
+        damageDone = currentLog[2];
+        healthRemaining = currentLog[3];
+
+        consolasFont = Render.AddFont("Consolas", 10, 90);
+        
+        currentTextPos = textY + (textYIncrement * i);
+        
+        toSay = "Hit " + victimName + " in the " + hitboxName + " for " + damageDone + " damage (" + healthRemaining + " health remaining)";
+
+        textCol = [255,255,255];
+        
+        Render.StringCustom(textX + 1, currentTextPos + 1, 0, toSay, [0, 0, 0, hurtLogs[i][5]], consolasFont);
+        Render.StringCustom(textX, currentTextPos, 0, toSay, [textCol[0], textCol[1], textCol[2], hurtLogs[i][5]], consolasFont);
+    }
 }
 
 main();
+
+
+function randFloat(min, max) {
+    return Math.random() * (max - min) + min;
+}
+
+
+
+function hitgroupToHitbox(hitgroup) {
+    hitbox = "UNKNOWN";
+    
+    switch (hitgroup) {
+        case 0:
+        hitbox =  "head";
+        break;
+        case 1:
+        hitbox =  "neck";
+        break;
+        case 2:
+        hitbox =  "pelvis";
+        break;
+        case 3:
+        hitbox =  "body";
+        break;
+        case 4:
+        hitbox =  "chest";
+        break;
+        case 5:
+        hitbox =  "chest";
+        break;
+        case 6:
+        hitbox =  "upper chest";
+        break;
+        case 7:
+        hitbox =  "left thigh";
+        break;
+        case 8:
+        hitbox =  "right thigh";
+        break;
+        case 9:
+        hitbox =  "left calf";
+        break;
+        case 10:
+        hitbox =  "right calf";
+        break;
+        case 11:
+        hitbox =  "left foot";
+        break;
+        case 12:
+        hitbox =  "right foot";
+        break;
+        case 13:
+        hitbox =  "left hand";
+        break;
+        case 14:
+        hitbox =  "right hand";
+        break;
+        case 15:
+        hitbox =  "left arm";
+        break;
+        case 16:
+        hitbox =  "left forearm";
+        break;
+        case 17:
+        hitbox =  "right arm";
+        break;
+        case 18:
+        hitbox =  "right forearm";
+    }
+    return hitbox;
+}
+
+
+
+
+function HSVtoRGB(h, s, v)
+{
+    var r, g, b, i, f, p, q, t;
+
+    i = Math.floor(h * 6);
+    f = h * 6 - i;
+    p = v * (1 - s);
+    q = v * (1 - f * s);
+    t = v * (1 - (1 - f) * s);
+
+    switch (i % 6)
+    {
+        case 0: r = v, g = t, b = p; break;
+        case 1: r = q, g = v, b = p; break;
+        case 2: r = p, g = v, b = t; break;
+        case 3: r = p, g = q, b = v; break;
+        case 4: r = t, g = p, b = v; break;
+        case 5: r = v, g = p, b = q; break;
+    }
+
+    return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) };
+}
